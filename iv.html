@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>IV Fluid Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: Arial; text-align: center; background:#f0f0f0; margin:0; }
+h2 { background:#0077cc; color:white; padding:10px; margin:0; }
+
+/* IV Bag */
+.bottle {
+  width:100px;
+  height:260px;
+  border:4px solid #333;
+  margin:20px auto;
+  border-radius:30px 30px 20px 20px;
+  position: relative;
+  background:#f7f7f7;
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* Fluid */
+.fluid {
+  position:absolute;
+  bottom:0;
+  left:0;
+  width:100%;
+  height:0%;
+  border-radius:0 0 20px 20px;
+  background: linear-gradient(to top, #00bfff 0%, #1e90ff 80%);
+  overflow: hidden;
+  transition: height 0.3s, background 0.5s;
+}
+
+/* Wave inside fluid */
+.wave {
+  position:absolute;
+  width:200%;
+  height:30px;
+  bottom:0;
+  left:-50%;
+  background: rgba(255,255,255,0.4);
+  border-radius: 50%;
+}
+
+/* Tube */
+.tube {
+  width:15px;
+  height:60px;
+  background:#ccc;
+  border-radius:10px;
+  margin:0 auto;
+  margin-top:-10px;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+  position: relative;
+}
+
+/* Drip */
+.drip {
+  position:absolute;
+  width:6px;
+  height:12px;
+  border-radius:50%;
+  left:50%;
+  transform: translateX(-50%);
+  top:0;
+  animation: dripFall linear forwards;
+}
+@keyframes dripFall {
+  0% { transform: translateX(-50%) translateY(0) scaleY(1); opacity:1; }
+  80% { transform: translateX(-50%) translateY(50px) scaleY(1.2); opacity:1; }
+  100% { transform: translateX(-50%) translateY(60px) scaleY(1); opacity:0; }
+}
+
+/* Nurse cat animation */
+#nurse-cat {
+  position: fixed;
+  bottom:10px;
+  right:10px;
+  width:80px;
+  display:none;
+  animation: popUp 1s ease-in-out forwards;
+}
+@keyframes popUp {
+  0% { transform: scale(0); opacity:0; }
+  50% { transform: scale(1.2); opacity:1; }
+  100% { transform: scale(1); opacity:1; }
+}
+
+.controls { margin-top:20px; }
+button {
+  padding:10px 20px;
+  margin:5px;
+  border:none;
+  border-radius:5px;
+  font-size:16px;
+}
+#connectBtn { background:purple; color:white; }
+#setAlarmBtn { background:orange; color:white; }
+#stopBtn { background:red; color:white; }
+footer { font-size:12px; color:#666; margin-top:15px; }
+</style>
+</head>
+<body>
+<h2>Dr Sarans ENT Clinic<br>Fluid Management System</h2>
+
+<div class="bottle">
+  <div id="fluid" class="fluid">
+    <div id="wave" class="wave"></div>
+  </div>
+</div>
+<div class="tube"></div>
+<div id="drip-container" style="position:relative; height:60px;"></div>
+
+<img src="catnurse.png" id="nurse-cat" alt="Nurse Cat">
+
+<h3 id="reading">Status: Waiting...</h3>
+
+<div class="controls">
+  <button id="connectBtn" onclick="connectBLE()">Scan & Connect BLE</button>
+  <button id="setAlarmBtn" onclick="setAlarm()">Set Alarm</button>
+  <button id="stopBtn" onclick="stopAlarm()">Stop Alarm</button>
+</div>
+
+<footer>Made by Zabi</footer>
+
+<script>
+let bleDevice;
+let bleServer;
+let bleService;
+let bleCharacteristic;
+let alarmEnabled = false;
+let alarmInterval = null;
+const ALARM_THRESHOLD = 240;
+const dripContainer = document.getElementById('drip-container');
+const nurseCat = document.getElementById('nurse-cat');
+let dripTimeout = null;
+
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+document.body.addEventListener('click', () => { if (audioCtx.state === 'suspended') audioCtx.resume(); });
+
+function playBeep() {
+  let osc = audioCtx.createOscillator();
+  let gainNode = audioCtx.createGain();
+  osc.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  osc.type = "square";
+  osc.frequency.value = 800;
+  gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.3);
+}
+
+function startAlarm() {
+  if (alarmInterval) return;
+  alarmInterval = setInterval(playBeep, 800);
+}
+
+function stopAlarm() {
+  alarmEnabled = false;
+  if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
+  alert("Alarm stopped!");
+}
+
+function setAlarm() {
+  alarmEnabled = true;
+  playBeep();
+  alert("Alarm set. Will beep continuously if weight < " + ALARM_THRESHOLD + " g.");
+}
+
+// Create one drip
+function createDrip(color) {
+  const existing = dripContainer.querySelector('.drip');
+  if(existing) return;
+
+  const drip = document.createElement('div');
+  drip.className = 'drip';
+  drip.style.background = color;
+  dripContainer.appendChild(drip);
+
+  setTimeout(() => { if(drip.parentNode) dripContainer.removeChild(drip); }, 1200);
+}
+
+function updateDripRate(weight){
+  if(dripTimeout) clearTimeout(dripTimeout);
+  const color = weight < 300 ? 'red' : 'rgba(0,191,255,0.9)';
+  const interval = 1000 - ((weight-270)/590)*600;
+  dripTimeout = setTimeout(function dripLoop(){
+    createDrip(color);
+    dripTimeout = setTimeout(dripLoop, interval);
+  }, interval);
+}
+
+// Fluid display
+function updateFluidDisplay(weight) {
+  document.getElementById("reading").innerText = weight + " g";
+  let percent = 0;
+  if (weight >= 860) percent = 100;
+  else if (weight >= 700) percent = 80;
+  else if (weight >= 500) percent = 60;
+  else if (weight >= 400) percent = 40;
+  else if (weight >= 300) percent = 20;
+  else if (weight >= 270) percent = 10;
+  else percent = 0;
+
+  const fluid = document.getElementById("fluid");
+  fluid.style.height = percent + "%";
+  fluid.style.background = weight < 300 ? 
+      'linear-gradient(to top, #ff4d4d 0%, #ff9999 80%)' :
+      'linear-gradient(to top, #00bfff 0%, #1e90ff 80%)';
+
+  // Show nurse cat if fluid < 400
+  if(weight < 400) {
+    nurseCat.style.display = 'block';
+  } else {
+    nurseCat.style.display = 'none';
+  }
+
+  // Wave slosh
+  const wave = document.getElementById("wave");
+  const waveSpeed = 2 + (100-percent)/20;
+  wave.style.animation = `waveAnim ${waveSpeed}s linear infinite`;
+
+  if(alarmEnabled && weight < ALARM_THRESHOLD) startAlarm();
+  else if(alarmInterval){ clearInterval(alarmInterval); alarmInterval = null; }
+
+  updateDripRate(weight);
+}
+
+// BLE handler
+function handleData(event) {
+  const decoder = new TextDecoder();
+  let value = decoder.decode(event.target.value).trim();
+  value = value.replace(/[^0-9.]/g,"");
+  if(value==="") return;
+  const weight = parseFloat(value);
+  if(!isNaN(weight)) updateFluidDisplay(weight);
+}
+
+// BLE connect
+async function connectBLE() {
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices:[0xFFE0]});
+    bleServer = await bleDevice.gatt.connect();
+    bleService = await bleServer.getPrimaryService(0xFFE0);
+    bleCharacteristic = await bleService.getCharacteristic(0xFFE1);
+    await bleCharacteristic.startNotifications();
+    bleCharacteristic.addEventListener('characteristicvaluechanged', handleData);
+    alert("Connected to " + bleDevice.name);
+  } catch(err) { alert("BLE connection failed: "+err); }
+}
+</script>
+</body>
+</html>
