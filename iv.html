@@ -104,7 +104,7 @@ footer { font-size:12px; color:#666; margin-top:15px; }
 </style>
 </head>
 <body>
-<h2>Dr Sarans ENT Clinic<br>Fluid Management System</h2>
+<h2>Universal<br>Fluid Management System</h2>
 
 <div class="bottle">
   <div id="fluid" class="fluid">
@@ -124,7 +124,7 @@ footer { font-size:12px; color:#666; margin-top:15px; }
   <button id="stopBtn" onclick="stopAlarm()">Stop Alarm</button>
 </div>
 
-<footer>Made by Zabi</footer>
+<footer>Developer  @Zabi</footer>
 
 <script>
 let bleDevice;
@@ -141,6 +141,22 @@ let dripTimeout = null;
 let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 document.body.addEventListener('click', () => { if (audioCtx.state === 'suspended') audioCtx.resume(); });
 
+// Flashlight stream
+let torchStream = null;
+async function toggleFlash(on){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  try{
+    if(on){
+      torchStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+      const track = torchStream.getVideoTracks()[0];
+      await track.applyConstraints({advanced:[{torch:true}]});
+    } else {
+      if(torchStream){ torchStream.getTracks().forEach(track=>track.stop()); torchStream=null; }
+    }
+  } catch(err){ console.log("Flash error:", err);}
+}
+
+// Beep sound
 function playBeep() {
   let osc = audioCtx.createOscillator();
   let gainNode = audioCtx.createGain();
@@ -155,32 +171,30 @@ function playBeep() {
 
 function startAlarm() {
   if (alarmInterval) return;
-  alarmInterval = setInterval(playBeep, 800);
+  alarmInterval = setInterval(()=>{ playBeep(); toggleFlash(true); setTimeout(()=>toggleFlash(false),300); }, 800);
 }
 
 function stopAlarm() {
   alarmEnabled = false;
-  if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
+  if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; toggleFlash(false);}
   alert("Alarm stopped!");
 }
 
 function setAlarm() {
   alarmEnabled = true;
   playBeep();
-  alert("Alarm set. Will beep continuously if weight < " + ALARM_THRESHOLD + " g.");
+  alert("Alarm set. Will beep and blink flashlight if weight < " + ALARM_THRESHOLD + " g.");
 }
 
 // Create one drip
 function createDrip(color) {
   const existing = dripContainer.querySelector('.drip');
   if(existing) return;
-
   const drip = document.createElement('div');
   drip.className = 'drip';
   drip.style.background = color;
   dripContainer.appendChild(drip);
-
-  setTimeout(() => { if(drip.parentNode) dripContainer.removeChild(drip); }, 1200);
+  setTimeout(()=>{ if(drip.parentNode) dripContainer.removeChild(drip); }, 1200);
 }
 
 function updateDripRate(weight){
@@ -212,19 +226,15 @@ function updateFluidDisplay(weight) {
       'linear-gradient(to top, #00bfff 0%, #1e90ff 80%)';
 
   // Show nurse cat if fluid < 400
-  if(weight < 400) {
-    nurseCat.style.display = 'block';
-  } else {
-    nurseCat.style.display = 'none';
-  }
+  if(weight < 400) nurseCat.style.display='block'; else nurseCat.style.display='none';
 
-  // Wave slosh
+  // Wave animation
   const wave = document.getElementById("wave");
   const waveSpeed = 2 + (100-percent)/20;
   wave.style.animation = `waveAnim ${waveSpeed}s linear infinite`;
 
   if(alarmEnabled && weight < ALARM_THRESHOLD) startAlarm();
-  else if(alarmInterval){ clearInterval(alarmInterval); alarmInterval = null; }
+  else if(alarmInterval){ clearInterval(alarmInterval); alarmInterval=null; toggleFlash(false); }
 
   updateDripRate(weight);
 }
