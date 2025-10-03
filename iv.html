@@ -106,7 +106,7 @@ footer { font-size:12px; color:#666; margin-top:15px; }
 </head>
 <body>
 <h2>Universal<br>Fluid Monitor System</h2>
-<p>developer @zabi  in collaboration with @Purshothamman @Harish</p>
+<p>developer @zabi , @purushothamman, @Harish</p>
 
 <div class="bottle">
   <div id="fluid" class="fluid">
@@ -221,7 +221,7 @@ function updateDripRate(weight){
 
 // Fluid display
 function updateFluidDisplay(weight) {
-  document.getElementById("reading").innerText = Value+ " g";
+  document.getElementById("reading").innerText = weight + " g";
   let percent = 0;
   if (weight >= 860) percent = 100;
   else if (weight >= 700) percent = 80;
